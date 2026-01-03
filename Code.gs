@@ -150,9 +150,10 @@ const scryfallSearch_ = (params, num_results = MAX_RESULTS_) => {
 /************ CONFIG STORAGE KEYS ************/
 const CONFIG_KEYS = {
   SHEET_NAME: 'SHEET_NAME',
-  URL_COLUMN_NUMBER: 'URL_COLUMN_NUMBER', // A=1, B=2, ...
+  URL_COLUMN_NUMBER: 'URL_COLUMN_NUMBER',
   FOLDER_ID: 'FOLDER_ID',
   HEADER_ROW: 'HEADER_ROW',
+  IMAGE_NAME_COLUMN: 'IMAGE_NAME_COLUMN' // New key for image name column
 };
 /********************************************/
 
@@ -257,6 +258,15 @@ function configure() {
     1000
   );
 
+  const imageNameCol = promptInt_(
+    ui,
+    'Image Name Column',
+    'Enter the column NUMBER to use for image names (A=1, B=2, ...). Use 0 to disable.',
+    Number.isFinite(current.IMAGE_NAME_COLUMN) ? current.IMAGE_NAME_COLUMN : 0,
+    0,
+    1000
+  );
+
   // Persist config for this spreadsheet
   props.setProperties(
     {
@@ -264,6 +274,7 @@ function configure() {
       [CONFIG_KEYS.URL_COLUMN_NUMBER]: String(urlCol),
       [CONFIG_KEYS.FOLDER_ID]: folderId,
       [CONFIG_KEYS.HEADER_ROW]: String(headerRow),
+      [CONFIG_KEYS.IMAGE_NAME_COLUMN]: String(imageNameCol),
     },
     true
   );
@@ -283,7 +294,8 @@ function showConfig() {
     `SHEET_NAME: ${cfg.SHEET_NAME || '(not set)'}\n` +
       `URL_COLUMN_NUMBER: ${Number.isFinite(cfg.URL_COLUMN_NUMBER) ? cfg.URL_COLUMN_NUMBER : '(not set)'}\n` +
       `FOLDER_ID: ${cfg.FOLDER_ID ? cfg.FOLDER_ID : '(not set)'}\n` +
-      `HEADER_ROW: ${Number.isFinite(cfg.HEADER_ROW) ? cfg.HEADER_ROW : '(not set)'}`,
+      `HEADER_ROW: ${Number.isFinite(cfg.HEADER_ROW) ? cfg.HEADER_ROW : '(not set)'}\n` +
+      `IMAGE_NAME_COLUMN: ${Number.isFinite(cfg.IMAGE_NAME_COLUMN) ? cfg.IMAGE_NAME_COLUMN : '(not set)'}`,
     ui.ButtonSet.OK
   );
 }
@@ -320,14 +332,14 @@ function handleEdit(e) {
     if (!/^https?:\/\//i.test(url)) continue;
 
     // Download and save
-    downloadSingleImage_(url, row, cfg.FOLDER_ID);
+    downloadSingleImage_(url, row, cfg.FOLDER_ID, cfg.IMAGE_NAME_COLUMN);
   }
 }
 
 /**
  * Downloads one image and saves it to Drive folder.
  */
-function downloadSingleImage_(url, rowNumber, folderId) {
+function downloadSingleImage_(url, rowNumber, folderId, imageNameCol) {
   try {
     const resp = UrlFetchApp.fetch(url, {
       muteHttpExceptions: true,
@@ -342,7 +354,22 @@ function downloadSingleImage_(url, rowNumber, folderId) {
 
     const blob = resp.getBlob();
     const contentType = (blob.getContentType() || '').toLowerCase();
-    const fileName = buildFileName_(url, rowNumber, contentType);
+
+    let fileName;
+    if (imageNameCol > 0) {
+      const nameFromCol = String(
+        SpreadsheetApp.getActiveSpreadsheet()
+          .getActiveSheet()
+          .getRange(rowNumber, imageNameCol)
+          .getDisplayValue()
+      ).trim();
+
+      fileName = nameFromCol
+        ? `${nameFromCol.replace(/[^\w.\-]+/g, '_')}.${contentTypeToExt_(contentType)}`
+        : buildFileName_(url, rowNumber, contentType);
+    } else {
+      fileName = buildFileName_(url, rowNumber, contentType);
+    }
 
     DriveApp.getFolderById(folderId).createFile(blob.setName(fileName));
 
@@ -383,6 +410,7 @@ function getConfig_(opts) {
   const URL_COLUMN_NUMBER = parseInt(props.getProperty(CONFIG_KEYS.URL_COLUMN_NUMBER), 10);
   const FOLDER_ID = props.getProperty(CONFIG_KEYS.FOLDER_ID);
   const HEADER_ROW = parseInt(props.getProperty(CONFIG_KEYS.HEADER_ROW), 10);
+  const IMAGE_NAME_COLUMN = parseInt(props.getProperty(CONFIG_KEYS.IMAGE_NAME_COLUMN), 10);
 
   if (!allowMissing) {
     const missing = [];
@@ -398,7 +426,7 @@ function getConfig_(opts) {
     }
   }
 
-  return { SHEET_NAME, URL_COLUMN_NUMBER, FOLDER_ID, HEADER_ROW };
+  return { SHEET_NAME, URL_COLUMN_NUMBER, FOLDER_ID, HEADER_ROW, IMAGE_NAME_COLUMN };
 }
 
 function promptRequired_(ui, title, message, defaultValue) {
