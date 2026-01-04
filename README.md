@@ -1,6 +1,15 @@
 # Image Downloader for Google Sheets
 
-(Automatic image downloads from URL cells — Scryfall-friendly)
+An automatic image downloader from cells containing image URLs packaged with a forked version of a google sheets custom function for the scryfall api. This is for placing orders of MTG proxy orders on MPCfill.
+
+# USAGE
+The Scryfall() GS function can be used to pull out image urls, eg. 
+
+=SCRYFALL(<Cell address with your card name or card search query>, <A String of space separated Scryfall Field names>, <Max Number of results returned (Each gets its own line below where this is called)>)
+
+=SCRYFALL(A2, "name type oracle_text power toughness mana_cost prices.usd image_uris.normal image_uris.large image_uris.png", 3)
+
+The Image Downloader Trigger gets called when the column specified in the setup config is edited - so copying and pasting the column will trigger the downloads. The above example puts the 'large' images in the 9th column of the results, so in my case it would be 10 because of the reference column A before the results.
 
 ## What this does
 
@@ -16,23 +25,37 @@ It supports:
 
 ## One-Time Setup (Required)
 
-### 1) Make a copy of the Sheet
+### 1) Creating the sheet script
+First click on the extensions menu and navigate to the 'Apps Script' button.
+![Click on Extensions](images/1.png)
 
-Open the template and choose:
+![Click on Apps Script](images/2.png)
 
-**File → Make a copy**
+Now Name your script
+![Name your script](images/3.png)
 
-You must own the copy to authorize scripts.
+Navigate to script settings page
+![Click on Script Settings](images/4.png)
 
-### 2) Open the Image Downloader menu
+Ensure you have the correct timezone selected - this can impact api calls. And also select the 'show appscript.json manifest' check box.
+![Confirm timezone, and check appscript.json](images/5.png)
 
-After opening your copy, wait 2–3 seconds. You will see a new menu:
+Navigate back to the script tab, and copy in the Code.gs file
+![Copy script into Code.gs](images/6.png)
 
-**Image Downloader**
+In the appsscript.json folder, allow for Oauth by pasting in the scopes - keep all other parameters in your own file. 
+![Copy script into appscript.json](images/7.png)
 
-If you do not see it, refresh the page.
+Apply your Scryfall call to get the image urls.
+![Use Scryfall() function to get img urls](images/8.png)
+
+Copy the Google Drive Folder ID you'll be using to store the images
+![Setup the Image downloader script](images/10.png)
 
 ### 3) Run Setup
+
+Setup the image downloader script. If you don't see this menu after saving your script, try refreshing the page.
+![Setup the Image downloader script](images/9.png)
 
 Click:
 
