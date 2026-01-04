@@ -5,7 +5,7 @@ An automatic image downloader from cells containing image URLs packaged with a f
 # USAGE
 The Scryfall() GS function can be used to pull out image urls, eg. 
 
-=SCRYFALL(<Cell address with your card name or card search query>, <A String of space separated Scryfall Field names>, <Max Number of results returned (Each gets its own line below where this is called)>)
+=SCRYFALL(\<Cell address with your card name or card search query\>, \<A String of space separated Scryfall Field names\>, <Max Number of results returned (Each gets its own line below where this is called)>)
 
 =SCRYFALL(A2, "name type oracle_text power toughness mana_cost prices.usd image_uris.normal image_uris.large image_uris.png", 3)
 
