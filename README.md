@@ -33,29 +33,37 @@ First click on the extensions menu and navigate to the 'Apps Script' button.
 ![Click on Apps Script](images/2.png)
 
 Now Name your script
+
 ![Name your script](images/3.png)
 
 Navigate to script settings page
+
 ![Click on Script Settings](images/4.png)
 
 Ensure you have the correct timezone selected - this can impact api calls. And also select the 'show appscript.json manifest' check box.
+
 ![Confirm timezone, and check appscript.json](images/5.png)
 
 Navigate back to the script tab, and copy in the Code.gs file
+
 ![Copy script into Code.gs](images/6.png)
 
 In the appsscript.json folder, allow for Oauth by pasting in the scopes - keep all other parameters in your own file. 
+
 ![Copy script into appscript.json](images/7.png)
 
 Apply your Scryfall call to get the image urls.
+
 ![Use Scryfall() function to get img urls](images/8.png)
 
 Copy the Google Drive Folder ID you'll be using to store the images
+
 ![Setup the Image downloader script](images/10.png)
 
 ### 3) Run Setup
 
 Setup the image downloader script. If you don't see this menu after saving your script, try refreshing the page.
+
 ![Setup the Image downloader script](images/9.png)
 
 Click:
