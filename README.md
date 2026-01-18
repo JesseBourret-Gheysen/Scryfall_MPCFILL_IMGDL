@@ -1,6 +1,6 @@
 # Image Downloader for Google Sheets
 
-An automatic image downloader from cells containing image URLs packaged with a forked version of a google sheets custom function for the scryfall api. This is for placing orders of MTG proxy orders on MPCfill.
+An automatic image downloader from cells containing image URLs packaged with a forked version of a google sheets custom function for the scryfall api. This is for placing orders of MTG proxy orders on MPCfill (https://mpcfill.com/editor).
 
 # USAGE
 The Scryfall() GS function can be used to pull out image urls, eg. 
@@ -182,3 +182,10 @@ If something breaks:
 
 - Check **Extensions → Apps Script → Executions**
 - Look for red “Failed” runs and read the error message
+
+---
+
+## Future Goals
+
+1) In line card image previews
+2) Replace the need to download the MPCFill Desktop application : https://github.com/chilli-axe/mpc-autofill/wiki/Desktop-Tool

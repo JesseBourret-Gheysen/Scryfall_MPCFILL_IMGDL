@@ -77,10 +77,13 @@ const SCRYFALL = (query, fields = "name", num_results = 150,
     if ("card_faces" in card) {
       Object.assign(card, card["card_faces"][0]);
     }
-
+    // -------- Commenting out their old hack from b4 fork---------
     // a little hack to make images return an image function; note that Google
     // sheets doesn't currently execute it or anything
-    card["image"] = `=IMAGE("${card["image_uris"]["normal"]}", 4, 340, 244)`;
+    // card["image"] = `=IMAGE("${card["image_uris"]["normal"]}", 4, 340, 244)`;
+    // ------------------------------------------------------------
+    // ----- New hack to return image URL directly ----- Thanks to j05h
+    card["image"] = `=MAP("${card["image_uris"]["normal"]}", LAMBDA(X,IF(X<>"",IMAGE(X),)))`;
 
     fields.forEach(field => {
       // grab the field from the card data
