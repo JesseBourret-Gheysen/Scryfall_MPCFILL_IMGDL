@@ -43,7 +43,7 @@ const SCRYFALL = (query, fields = "name", num_results = 150,
     "type": "type_line",
     "uri": "scryfall_uri",
     "url": "scryfall_uri",
-  }
+  };
 
   // do the same friendly thing, but for sorting options
   const order_mappings = {
@@ -77,13 +77,9 @@ const SCRYFALL = (query, fields = "name", num_results = 150,
     if ("card_faces" in card) {
       Object.assign(card, card["card_faces"][0]);
     }
-    // -------- Commenting out their old hack from b4 fork---------
-    // a little hack to make images return an image function; note that Google
-    // sheets doesn't currently execute it or anything
-    // card["image"] = `=IMAGE("${card["image_uris"]["normal"]}", 4, 340, 244)`;
-    // ------------------------------------------------------------
-    // ----- New hack to return image URL directly ----- Thanks to j05h
-    card["image"] = `=MAP("${card["image_uris"]["normal"]}", LAMBDA(X,IF(X<>"",IMAGE(X),)))`;
+
+    // Modify the image field to return the URL directly, and use a helper script to evaluate it as a formula
+    card["image"] = card["image_uris"] && card["image_uris"]["normal"] ? card["image_uris"]["normal"] : "";
 
     fields.forEach(field => {
       // grab the field from the card data
@@ -454,6 +450,24 @@ function promptInt_(ui, title, message, defaultValue, min, max) {
   }
 
   return value;
+}
+
+// Add a helper function to evaluate the IMAGE formulas after the SCRYFALL function runs
+function evaluateImageFormulas() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  const range = sheet.getDataRange(); // Adjust this range to target the specific cells with the image URLs
+  const values = range.getValues();
+
+  for (let row = 0; row < values.length; row++) {
+    for (let col = 0; col < values[row].length; col++) {
+      const cellValue = values[row][col];
+      Logger.log(`Checking cell at row ${row + 1}, column ${col + 1}: ${cellValue}`);
+      if (typeof cellValue === "string" && cellValue.startsWith("http")) {
+        // Set the formula in the cell
+        sheet.getRange(row + 1, col + 1).setFormula(`=IMAGE("${cellValue}", 4, 340, 244)`);
+      }
+    }
+  }
 }
 
 // eof
