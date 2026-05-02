@@ -13,18 +13,23 @@ const MAX_RESULTS_ = 700;  // a safe max due to Google Sheets timeout system
  * @param {name}                          order       The order to sort cards by, "name" is default
  * @param {auto}                          dir         Direction to return the sorted cards: auto, asc, or desc 
  * @param {cards}                         unique      Remove duplicate cards (default), art, or prints
+ * @param {0}                             wait        Seconds to wait before executing the API call (default 0)
  * @return                                List of Scryfall search results
  * @customfunction
  */
 const SCRYFALL = (query, fields = "name", num_results = 150,
-                  order = "name", dir = "auto", unique = "cards") => {
-  if (query === undefined) { 
+                  order = "name", dir = "auto", unique = "cards", wait = 0) => {
+  if (query === undefined) {
     throw new Error("Must include a query");
   }
 
   // don't break scryfall
   if (num_results > MAX_RESULTS_) {
     num_results = MAX_RESULTS_;
+  }
+
+  if (wait > 0) {
+    Utilities.sleep(wait * 1000);
   }
 
   // the docs say fields is space separated, but allow comma separated too
@@ -118,7 +123,17 @@ const scryfallSearch_ = (params, num_results = MAX_RESULTS_) => {
   // try to get the results from scryfall
   try {
     while (true) {
-      response = JSON.parse(UrlFetchApp.fetch(`${scryfall_url}&page=${page}`).getContentText());
+      const raw = UrlFetchApp.fetch(`${scryfall_url}&page=${page}`, {
+        muteHttpExceptions: true,
+        headers: {
+          'User-Agent': 'GoogleSheetsScryfallScript/1.0',
+          'Accept': 'application/json'
+        }
+      });
+      if (raw.getResponseCode() !== 200) {
+        throw new Error(`Scryfall returned ${raw.getResponseCode()}: ${raw.getContentText()}`);
+      }
+      response = JSON.parse(raw.getContentText());
 
       if (!response.data) {
         throw new Error("No results from Scryfall");
