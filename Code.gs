@@ -8,7 +8,7 @@ const MAX_RESULTS_ = 700;  // a safe max due to Google Sheets timeout system
  * Inserts the results of a search in Scryfall into your spreadsheet
  *
  * @param {"name:braids type:legendary"}  query       Scryfall search query
- * @param {"name power toughness"}        fields      List of fields to return from Scryfall, "name" is default
+ * @param {"name power toughness"}        fields      List of fields to return from Scryfall, "name" is default. Pass "*" to return all fields with an auto-generated header row.
  * @param {150}                           num_results Number of results (default 150, maximum 700)
  * @param {name}                          order       The order to sort cards by, "name" is default
  * @param {auto}                          dir         Direction to return the sorted cards: auto, asc, or desc 
@@ -32,8 +32,10 @@ const SCRYFALL = (query, fields = "name", num_results = 150,
     Utilities.sleep(wait * 1000);
   }
 
+  const wildcard = (typeof fields === "string" ? fields.trim() : fields) === "*";
+
   // the docs say fields is space separated, but allow comma separated too
-  fields = fields.split(/[\s,]+/);
+  fields = wildcard ? [] : fields.split(/[\s,]+/);
 
   // most people won't know the JSON field names for cards, so let's do some mapping of
   // what they'll try to what it should be
@@ -71,8 +73,18 @@ const SCRYFALL = (query, fields = "name", num_results = 150,
   // query scryfall
   const cards = scryfallSearch_(scryfall_query, num_results);
 
+  // when "*" is used, derive the field list from the first card's keys
+  if (wildcard && cards.length > 0) {
+    fields = Object.keys(cards[0]);
+  }
+
   // now, let's accumulate the results
   let output = [];
+
+  // prepend a header row when "*" is used so the user can see the column names
+  if (wildcard) {
+    output.push(fields);
+  }
 
   cards.splice(0, num_results).forEach(card => {
     let row = [];
@@ -88,7 +100,14 @@ const SCRYFALL = (query, fields = "name", num_results = 150,
 
     fields.forEach(field => {
       // grab the field from the card data
-      let val = deepFind_(card, field) || "";
+      let val = deepFind_(card, field);
+
+      // stringify objects/arrays rather than returning [object Object]
+      if (val !== null && val !== undefined && typeof val === "object") {
+        val = JSON.stringify(val);
+      } else if (val === null || val === undefined) {
+        val = "";
+      }
 
       // then, let's do some nice data massaging for use inside Sheets
       if (typeof val === "string") {
@@ -484,5 +503,28 @@ function evaluateImageFormulas() {
     }
   }
 }
+
+/**
+ * Returns a single row listing every field name available from a Scryfall card result.
+ * Useful as a header row placed above a SCRYFALL() result block, or to discover what fields exist.
+ *
+ * @param {"Lightning Bolt"}  query  Any valid Scryfall search query (only the first result is used)
+ * @return                           Single row of field names
+ * @customfunction
+ */
+const SCRYFALL_FIELDS = (query) => {
+  if (query === undefined) {
+    throw new Error("Must include a query");
+  }
+
+  const scryfall_query = { q: query, unique: "cards" };
+  const cards = scryfallSearch_(scryfall_query, 1);
+
+  if (!cards.length) {
+    throw new Error("No results found for that query");
+  }
+
+  return [Object.keys(cards[0])];
+};
 
 // eof
