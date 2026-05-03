@@ -8,17 +8,18 @@ const MAX_RESULTS_ = 700;  // a safe max due to Google Sheets timeout system
  * Inserts the results of a search in Scryfall into your spreadsheet
  *
  * @param {"name:braids type:legendary"}  query       Scryfall search query
- * @param {"name power toughness"}        fields      List of fields to return from Scryfall, "name" is default. Pass "*" to return all fields with an auto-generated header row.
+ * @param {"name power toughness"}        fields      List of fields to return from Scryfall, "name" is default. Pass "*" to return all fields.
  * @param {150}                           num_results Number of results (default 150, maximum 700)
  * @param {name}                          order       The order to sort cards by, "name" is default
  * @param {auto}                          dir         Direction to return the sorted cards: auto, asc, or desc 
  * @param {cards}                         unique      Remove duplicate cards (default), art, or prints
  * @param {0}                             wait        Seconds to wait before executing the API call (default 0)
+ * @param {false}                         headers     Output field names as a header row before results (default false)
  * @return                                List of Scryfall search results
  * @customfunction
  */
 const SCRYFALL = (query, fields = "name", num_results = 150,
-                  order = "name", dir = "auto", unique = "cards", wait = 0) => {
+                  order = "name", dir = "auto", unique = "cards", wait = 0, headers = false) => {
   if (query === undefined) {
     throw new Error("Must include a query");
   }
@@ -29,7 +30,13 @@ const SCRYFALL = (query, fields = "name", num_results = 150,
   }
 
   if (wait > 0) {
-    Utilities.sleep(wait * 1000);
+    wait = Math.min(wait, 10000);
+    // Utilities.sleep() max is 300,000 ms per call — chunk large waits
+    let remaining = wait * 1000;
+    while (remaining > 0) {
+      Utilities.sleep(Math.min(remaining, 300000));
+      remaining -= 300000;
+    }
   }
 
   const wildcard = (typeof fields === "string" ? fields.trim() : fields) === "*";
@@ -81,8 +88,7 @@ const SCRYFALL = (query, fields = "name", num_results = 150,
   // now, let's accumulate the results
   let output = [];
 
-  // prepend a header row when "*" is used so the user can see the column names
-  if (wildcard) {
+  if (headers) {
     output.push(fields);
   }
 
