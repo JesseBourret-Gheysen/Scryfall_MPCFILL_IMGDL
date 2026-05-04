@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node --check \"C:\\\\Users\\\\jesse\\\\Documents\\\\GitHub\\\\Scryfall_MPCFILL_IMGDL\\\\Code.gs\")",
+      "Bash(cp \"C:\\\\Users\\\\jesse\\\\Documents\\\\GitHub\\\\Scryfall_MPCFILL_IMGDL\\\\Code.gs\" \"C:\\\\Users\\\\jesse\\\\AppData\\\\Local\\\\Temp\\\\Code.js\")",
+      "Bash(node --check \"C:\\\\Users\\\\jesse\\\\AppData\\\\Local\\\\Temp\\\\Code.js\")",
+      "Bash(rm \"C:\\\\Users\\\\jesse\\\\AppData\\\\Local\\\\Temp\\\\Code.js\")"
+    ]
+  }
+}

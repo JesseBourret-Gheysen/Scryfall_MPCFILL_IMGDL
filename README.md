@@ -10,6 +10,62 @@ You can see some exaple fields in this cards json body: https://api.scryfall.com
 
 =SCRYFALL(A2, "name type oracle_text power toughness mana_cost prices.usd image_uris.normal image_uris.large image_uris.png", 3)
 
+## Full SCRYFALL() argument list
+
+```
+=SCRYFALL(query, fields, num_results, order, dir, unique, wait, headers)
+```
+
+| # | Arg | Type | Default | Notes |
+|---|-----|------|---------|-------|
+| 1 | `query` | string | (required) | Scryfall search query |
+| 2 | `fields` | string | `"name"` | Space- or comma-separated field names. Pass `"*"` for all fields |
+| 3 | `num_results` | number | `150` | Max 700 |
+| 4 | `order` | string | `"name"` | Scryfall sort order |
+| 5 | `dir` | string | `"auto"` | `auto`, `asc`, or `desc` |
+| 6 | `unique` | string | `"cards"` | `cards`, `art`, or `prints` |
+| 7 | `wait` | number | `0` | Seconds to delay before the API call. **Max 20** — Google Sheets custom functions hard-timeout at 30s |
+| 8 | `headers` | boolean | `false` | When `true`, prepend a header row of field names |
+
+Use `=SCRYFALL_FIELDS("query")` to list every available field name for a card.
+
+### About `wait` — what it is and isn't
+
+`wait` is a **per-cell** delay, not a cross-row rate limiter. Google Sheets evaluates custom functions in parallel, so 500 cells with `=SCRYFALL(..., 5)` all wait 5 seconds and then hit the API simultaneously — that won't avoid 429 rate-limit errors. For large sheets, use **Batch Mode** (below). Passing values above 20 will throw a clear error instead of silently hanging the cell.
+
+---
+
+## Batch Mode (for large sheets)
+
+The `=SCRYFALL()` formula runs in parallel across cells, which trips Scryfall's 10 req/sec rate limit on sheets with hundreds of rows. The **Image Downloader → Batch SCRYFALL** menu runs Scryfall calls **sequentially** in a single execution, with a randomized 110–350 ms gap between requests by default.
+
+### Setup
+
+1. Open the **Image Downloader** menu and click **Batch SCRYFALL → Configure batch…**
+2. You'll be asked for:
+   - **Batch query column** — column number containing the card name / Scryfall query in each row
+   - **Batch output column** — column number where results start (fields are written rightward)
+   - **Batch fields** — space- or comma-separated Scryfall field names (e.g. `name image_uris.large prices.usd`)
+   - **Min wait (ms)** — minimum sleep between requests (default 110)
+   - **Max wait (ms)** — maximum sleep between requests (default 350)
+
+### Run
+
+Click **Image Downloader → Batch SCRYFALL → Run batch now**. The script:
+
+- Reads queries from the configured column starting one row below your header row
+- Calls Scryfall one row at a time (single result per query)
+- Writes the chosen fields into the output column
+- Sleeps a random amount between min/max ms between calls
+- Toasts progress every 25 rows
+- Auto-retries on transient 429s (up to 3 retries, 60+s backoff)
+
+### Limits
+
+- Apps Script menu functions have a **6-minute** total runtime. With default 110–350 ms gaps, that's roughly 1,000–2,500 rows per run. Split larger sheets into chunks and re-run.
+- Empty rows in the query column are skipped.
+- Per-row fetch errors are written into the output cell as `ERROR: …` so you can resume manually.
+
 The Image Downloader Trigger gets called when the column specified in the setup config is edited - so copying and pasting the column will trigger the downloads. The above example puts the 'large' images in the 9th column of the results, so in my case it would be 10 because of the reference column A before the results.
 
 ## What this does

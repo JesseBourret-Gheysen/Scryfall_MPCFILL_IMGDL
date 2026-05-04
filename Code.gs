@@ -13,7 +13,7 @@ const MAX_RESULTS_ = 700;  // a safe max due to Google Sheets timeout system
  * @param {name}                          order       The order to sort cards by, "name" is default
  * @param {auto}                          dir         Direction to return the sorted cards: auto, asc, or desc 
  * @param {cards}                         unique      Remove duplicate cards (default), art, or prints
- * @param {0}                             wait        Seconds to wait before executing the API call (default 0)
+ * @param {number}                        wait        Seconds to wait before the API call (default 0, max 20 — custom functions time out at 30s)
  * @param {false}                         headers     Output field names as a header row before results (default false)
  * @return                                List of Scryfall search results
  * @customfunction
@@ -29,14 +29,14 @@ const SCRYFALL = (query, fields = "name", num_results = 150,
     num_results = MAX_RESULTS_;
   }
 
-  if (wait > 0) {
-    wait = Math.min(wait, 10000);
-    // Utilities.sleep() max is 300,000 ms per call — chunk large waits
-    let remaining = wait * 1000;
-    while (remaining > 0) {
-      Utilities.sleep(Math.min(remaining, 300000));
-      remaining -= 300000;
+  // custom functions hard-timeout at 30s; leave headroom for the fetch
+  const MAX_WAIT_SEC = 20;
+  const waitNum = Number(wait);
+  if (Number.isFinite(waitNum) && waitNum > 0) {
+    if (waitNum > MAX_WAIT_SEC) {
+      throw new Error(`wait must be <= ${MAX_WAIT_SEC} seconds (Google Sheets custom functions time out at 30s)`);
     }
+    Utilities.sleep(waitNum * 1000);
   }
 
   const wildcard = (typeof fields === "string" ? fields.trim() : fields) === "*";
@@ -148,13 +148,24 @@ const scryfallSearch_ = (params, num_results = MAX_RESULTS_) => {
   // try to get the results from scryfall
   try {
     while (true) {
-      const raw = UrlFetchApp.fetch(`${scryfall_url}&page=${page}`, {
+      let raw = UrlFetchApp.fetch(`${scryfall_url}&page=${page}`, {
         muteHttpExceptions: true,
         headers: {
           'User-Agent': 'GoogleSheetsScryfallScript/1.0',
           'Accept': 'application/json'
         }
       });
+      // single retry on 429 to absorb edge-case parallel-call collisions
+      if (raw.getResponseCode() === 429) {
+        Utilities.sleep(1500 + Math.floor(Math.random() * 1000));
+        raw = UrlFetchApp.fetch(`${scryfall_url}&page=${page}`, {
+          muteHttpExceptions: true,
+          headers: {
+            'User-Agent': 'GoogleSheetsScryfallScript/1.0',
+            'Accept': 'application/json'
+          }
+        });
+      }
       if (raw.getResponseCode() !== 200) {
         throw new Error(`Scryfall returned ${raw.getResponseCode()}: ${raw.getContentText()}`);
       }
@@ -192,7 +203,12 @@ const CONFIG_KEYS = {
   URL_COLUMN_NUMBER: 'URL_COLUMN_NUMBER',
   FOLDER_ID: 'FOLDER_ID',
   HEADER_ROW: 'HEADER_ROW',
-  IMAGE_NAME_COLUMN: 'IMAGE_NAME_COLUMN' // New key for image name column
+  IMAGE_NAME_COLUMN: 'IMAGE_NAME_COLUMN', // New key for image name column
+  BATCH_QUERY_COLUMN: 'BATCH_QUERY_COLUMN',
+  BATCH_OUTPUT_COLUMN: 'BATCH_OUTPUT_COLUMN',
+  BATCH_FIELDS: 'BATCH_FIELDS',
+  BATCH_WAIT_MIN_MS: 'BATCH_WAIT_MIN_MS',
+  BATCH_WAIT_MAX_MS: 'BATCH_WAIT_MAX_MS'
 };
 /********************************************/
 
@@ -206,6 +222,9 @@ function onOpen() {
     .addItem('Configure…', 'configure')
     .addSeparator()
     .addItem('Show current config', 'showConfig')
+    .addSeparator()
+    .addItem('Batch SCRYFALL → Configure batch…', 'configureBatch')
+    .addItem('Batch SCRYFALL → Run batch now', 'runScryfallBatch')
     .addSeparator()
     .addItem('Remove trigger', 'removeTrigger')
     .addToUi();
@@ -532,5 +551,223 @@ const SCRYFALL_FIELDS = (query) => {
 
   return [Object.keys(cards[0])];
 };
+
+/*******************************************************
+ * Batch SCRYFALL — sequential, rate-limit-safe processor
+ *
+ * Custom functions run in parallel and cannot share state, so
+ * =SCRYFALL() in 500 cells will trigger 429 errors. This menu-driven
+ * batch runs in a single execution with full service access and
+ * sleeps a random 110–350 ms between requests by default.
+ *******************************************************/
+
+function configureBatch() {
+  const ui = SpreadsheetApp.getUi();
+  const props = PropertiesService.getDocumentProperties();
+  const current = getBatchConfig_({ allowMissing: true });
+
+  const queryCol = promptInt_(
+    ui,
+    'Batch query column',
+    'Column NUMBER containing the card name / Scryfall query per row (A=1, B=2, ...).',
+    Number.isFinite(current.BATCH_QUERY_COLUMN) ? current.BATCH_QUERY_COLUMN : 1,
+    1,
+    1000
+  );
+
+  const outCol = promptInt_(
+    ui,
+    'Batch output column',
+    'Column NUMBER where results start. Result fields are written rightward from this column.',
+    Number.isFinite(current.BATCH_OUTPUT_COLUMN) ? current.BATCH_OUTPUT_COLUMN : 2,
+    1,
+    1000
+  );
+
+  const fields = promptRequired_(
+    ui,
+    'Batch fields',
+    'Space- or comma-separated Scryfall field names (e.g. "name image_uris.large prices.usd").',
+    current.BATCH_FIELDS || 'name image_uris.large'
+  );
+
+  const minMs = promptInt_(
+    ui,
+    'Min wait (ms)',
+    'Minimum milliseconds to sleep between requests. Scryfall asks for ~100 ms minimum.',
+    Number.isFinite(current.BATCH_WAIT_MIN_MS) ? current.BATCH_WAIT_MIN_MS : 110,
+    50,
+    60000
+  );
+
+  const maxMs = promptInt_(
+    ui,
+    'Max wait (ms)',
+    'Maximum milliseconds to sleep between requests. Must be >= min.',
+    Number.isFinite(current.BATCH_WAIT_MAX_MS) ? current.BATCH_WAIT_MAX_MS : 350,
+    minMs,
+    60000
+  );
+
+  props.setProperties(
+    {
+      [CONFIG_KEYS.BATCH_QUERY_COLUMN]: String(queryCol),
+      [CONFIG_KEYS.BATCH_OUTPUT_COLUMN]: String(outCol),
+      [CONFIG_KEYS.BATCH_FIELDS]: fields,
+      [CONFIG_KEYS.BATCH_WAIT_MIN_MS]: String(minMs),
+      [CONFIG_KEYS.BATCH_WAIT_MAX_MS]: String(maxMs),
+    },
+    false
+  );
+
+  ui.alert('Saved', 'Batch configuration saved.', ui.ButtonSet.OK);
+}
+
+function getBatchConfig_(opts) {
+  const allowMissing = !!(opts && opts.allowMissing);
+  const props = PropertiesService.getDocumentProperties();
+
+  const BATCH_QUERY_COLUMN = parseInt(props.getProperty(CONFIG_KEYS.BATCH_QUERY_COLUMN), 10);
+  const BATCH_OUTPUT_COLUMN = parseInt(props.getProperty(CONFIG_KEYS.BATCH_OUTPUT_COLUMN), 10);
+  const BATCH_FIELDS = props.getProperty(CONFIG_KEYS.BATCH_FIELDS);
+  const BATCH_WAIT_MIN_MS = parseInt(props.getProperty(CONFIG_KEYS.BATCH_WAIT_MIN_MS), 10);
+  const BATCH_WAIT_MAX_MS = parseInt(props.getProperty(CONFIG_KEYS.BATCH_WAIT_MAX_MS), 10);
+
+  if (!allowMissing) {
+    const missing = [];
+    if (!Number.isFinite(BATCH_QUERY_COLUMN)) missing.push('BATCH_QUERY_COLUMN');
+    if (!Number.isFinite(BATCH_OUTPUT_COLUMN)) missing.push('BATCH_OUTPUT_COLUMN');
+    if (!BATCH_FIELDS) missing.push('BATCH_FIELDS');
+    if (!Number.isFinite(BATCH_WAIT_MIN_MS)) missing.push('BATCH_WAIT_MIN_MS');
+    if (!Number.isFinite(BATCH_WAIT_MAX_MS)) missing.push('BATCH_WAIT_MAX_MS');
+    if (missing.length) {
+      throw new Error(
+        `Missing batch config: ${missing.join(', ')}. Use Image Downloader → Batch SCRYFALL → Configure batch…`
+      );
+    }
+  }
+
+  return { BATCH_QUERY_COLUMN, BATCH_OUTPUT_COLUMN, BATCH_FIELDS, BATCH_WAIT_MIN_MS, BATCH_WAIT_MAX_MS };
+}
+
+function scryfallSearchWithRetry_(params, num_results) {
+  let attempt = 0;
+  while (true) {
+    try {
+      return scryfallSearch_(params, num_results);
+    } catch (err) {
+      const msg = String(err && err.message || err);
+      const is429 = msg.indexOf('Scryfall returned 429') !== -1;
+      if (is429 && attempt < 3) {
+        attempt++;
+        Utilities.sleep(60000 + Math.floor(Math.random() * 15000));
+        continue;
+      }
+      throw err;
+    }
+  }
+}
+
+const BATCH_FIELD_MAPPINGS_ = {
+  "color": "color_identity",
+  "colors": "color_identity",
+  "flavor": "flavor_text",
+  "mana": "mana_cost",
+  "o": "oracle_text",
+  "oracle": "oracle_text",
+  "price": "prices.usd",
+  "type": "type_line",
+  "uri": "scryfall_uri",
+  "url": "scryfall_uri",
+};
+
+function batchFormatCard_(card, fields) {
+  if ("card_faces" in card) {
+    Object.assign(card, card["card_faces"][0]);
+  }
+  card["image"] = card["image_uris"] && card["image_uris"]["normal"] ? card["image_uris"]["normal"] : "";
+
+  return fields.map(field => {
+    let val = deepFind_(card, field);
+    if (val !== null && val !== undefined && typeof val === "object") {
+      val = JSON.stringify(val);
+    } else if (val === null || val === undefined) {
+      val = "";
+    }
+    if (typeof val === "string") {
+      val = val.replace(/\n/g, "\n\n");
+    } else if (Array.isArray(val)) {
+      val = field.includes("color") ? val.join("") : val.join(", ");
+    }
+    return val;
+  });
+}
+
+function runScryfallBatch() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ui = SpreadsheetApp.getUi();
+  const baseCfg = getConfig_({ allowMissing: true });
+  const cfg = getBatchConfig_();
+
+  const sheet = baseCfg.SHEET_NAME
+    ? ss.getSheetByName(baseCfg.SHEET_NAME) || ss.getActiveSheet()
+    : ss.getActiveSheet();
+
+  const headerRow = Number.isFinite(baseCfg.HEADER_ROW) ? baseCfg.HEADER_ROW : 1;
+  const fields = cfg.BATCH_FIELDS.split(/[\s,]+/).filter(Boolean)
+    .map(f => BATCH_FIELD_MAPPINGS_[f] === undefined ? f : BATCH_FIELD_MAPPINGS_[f]);
+
+  // find last row in the query column
+  const lastRow = sheet.getLastRow();
+  const startRow = headerRow + 1;
+  if (lastRow < startRow) {
+    ui.alert('Nothing to do', `No data rows below header row ${headerRow}.`, ui.ButtonSet.OK);
+    return;
+  }
+
+  const queryRange = sheet.getRange(startRow, cfg.BATCH_QUERY_COLUMN, lastRow - startRow + 1, 1);
+  const queries = queryRange.getValues();
+
+  let processed = 0;
+  let skipped = 0;
+  const total = queries.length;
+
+  for (let i = 0; i < total; i++) {
+    const row = startRow + i;
+    const query = String(queries[i][0] || '').trim();
+    if (!query) {
+      skipped++;
+      continue;
+    }
+
+    let cards;
+    try {
+      cards = scryfallSearchWithRetry_({ q: query, unique: 'cards' }, 1);
+    } catch (err) {
+      sheet.getRange(row, cfg.BATCH_OUTPUT_COLUMN).setValue(`ERROR: ${err.message || err}`);
+      skipped++;
+      // still pause so we don't tight-loop on a failing API
+      Utilities.sleep(cfg.BATCH_WAIT_MIN_MS + Math.floor(Math.random() * (cfg.BATCH_WAIT_MAX_MS - cfg.BATCH_WAIT_MIN_MS + 1)));
+      continue;
+    }
+
+    if (!cards.length) {
+      sheet.getRange(row, cfg.BATCH_OUTPUT_COLUMN).setValue('No results');
+      skipped++;
+    } else {
+      const rowVals = batchFormatCard_(cards[0], fields);
+      sheet.getRange(row, cfg.BATCH_OUTPUT_COLUMN, 1, rowVals.length).setValues([rowVals]);
+      processed++;
+    }
+
+    if ((i + 1) % 25 === 0) {
+      ss.toast(`Processed ${i + 1} / ${total} rows…`, 'Batch SCRYFALL');
+    }
+
+    Utilities.sleep(cfg.BATCH_WAIT_MIN_MS + Math.floor(Math.random() * (cfg.BATCH_WAIT_MAX_MS - cfg.BATCH_WAIT_MIN_MS + 1)));
+  }
+
+  ss.toast(`Batch complete: ${processed} processed, ${skipped} skipped`, 'Batch SCRYFALL', 10);
+}
 
 // eof
